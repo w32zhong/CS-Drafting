@@ -4,13 +4,15 @@ from csd import csd
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from model import CSDraftingDecoderModel, get_mag_model
 
-device = 0
+device = 1
 draft_list = []
-draft_names = ['JackFram/llama-160m']
+draft_names = ['JackFram/llama-68m']
+#draft_names = ['JackFram/llama-160m']
 for draft_name in draft_names:
-    hf_model = AutoModelForCausalLM.from_pretrained(draft_name)
+    hf_model = AutoModelForCausalLM.from_pretrained(draft_name,
+        load_in_8bit=True, device_map=f"cuda:{device}")
     model = CSDraftingDecoderModel(hf_model, name=draft_name)
-    model.cuda(device)
+    #model.cuda(device)
     draft_list.append(model)
 
 _BIGRAM_DIR = './bigram_models/'
@@ -19,22 +21,27 @@ mag_model = get_mag_model(bi_gram_path, True)
 mag_model.cuda(device)
 draft_list.append(mag_model)
 
-
-LLAMA_PATH = '/scratch/your_dir/llama/llama/'
-
 k_matrix = torch.tensor([[5, 10], [0, 10]])
-LLAMA_HF_PATH = LLAMA_PATH + 'hf_7b_chat'
+LLAMA_HF_PATH = 'NousResearch/Llama-2-7b-chat-hf'
 from transformers import LlamaForCausalLM, LlamaTokenizer
 
 tokenizer = LlamaTokenizer.from_pretrained(LLAMA_HF_PATH)
-hf_model = LlamaForCausalLM.from_pretrained(LLAMA_HF_PATH)
+hf_model = LlamaForCausalLM.from_pretrained(LLAMA_HF_PATH,
+    load_in_8bit=True, device_map=f"cuda:{device}")
+print('target model loaded!')
 
 target_model = CSDraftingDecoderModel(hf_model, name='llama', vocab_size=32000)
-target_model.cuda(device)
+#target_model.cuda(device)
 
-
-question = '<Your inputs>'
+question = "[INST] tell me something interesting about the solar eclipse in April 2024. [/INST]"
 initial_input = tokenizer(question, truncation=True, padding=False, return_tensors="pt")['input_ids'].to(target_model.device)
 input_ids = initial_input
+
+start_time = time.time()
 res = csd(draft_list, target_model, initial_input, input_ids, k_matrix, max_length=200)
+delta_time = time.time() - start_time
 generated_text = tokenizer.batch_decode(res, skip_special_tokens=True)
+
+input_len = input_ids.shape[-1]
+output_len = res[0].shape[-1] - input_len
+print('e2e speed:', delta_time, output_len, output_len / delta_time)

@@ -2,3 +2,5 @@ fschat[model_worker,webui]
 torch==2.0.1
 datasets==2.4.0
 transformers==4.34.1
+accelerate
+bitsandbytes
